@@ -1,5 +1,41 @@
 ---
 title: "Future Exercise"
 ---
+```{r}
+# load dslabs package
+library("dslabs")
 
-Placeholder file for a future exercise.
+# only run the next command interactively, not in a script
+# help(gapminder)  
+# get an overview of data structure
+str(gapminder)
+
+# get a summary of data
+summary(gapminder)
+
+# determine the type of object gapminder is
+class(gapminder)
+
+# Subset African countries
+africadata <- gapminder[gapminder$continent == "Africa", ]
+
+# Check the structure and summary of africadata
+str(africadata)
+summary(africadata)
+
+# Create a dataset with infant mortality and life expectancy
+africa_mort_life <- africadata[, c("infant_mortality", "life_expectancy")]
+
+# Inspect the structure and summary
+str(africa_mort_life)
+summary(africa_mort_life)
+
+# Create a dataset with population and life expectancy
+africa_pop_life <- africadata[, c("population", "life_expectancy")]
+
+# Inspect the structure and summary
+str(africa_pop_life)
+summary(africa_pop_life)
+```
+
+This analysis looks at African countries using the Gapminder dataset on R. The data is first subset to only include African countries. Then two smaller datasets are created to look at life expectancy with infant mortality and population with infant mortality. 
