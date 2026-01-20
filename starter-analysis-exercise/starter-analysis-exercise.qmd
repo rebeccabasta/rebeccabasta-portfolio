@@ -1,41 +1,143 @@
 ---
-title: "Future Exercise"
+title: "Data Analysis"
 ---
 ```{r}
-# load dslabs package
-library("dslabs")
+#load dslabs package
+library(dslabs)
+library(tidyverse)
 
-# only run the next command interactively, not in a script
-# help(gapminder)  
-# get an overview of data structure
+#help(gapminder)
+#The str functions is used to look at observations and variables in the dataset  
 str(gapminder)
 
-# get a summary of data
+#get a summary of data
 summary(gapminder)
 
-# determine the type of object gapminder is
+#determine the type of object gapminder is
+#The class function is a data frame that allows us to look at a class of the dataset
 class(gapminder)
 
-# Subset African countries
+#Using the gapminder dataset, I've created a new dataframe that will only include countries that have Africa as the continent
 africadata <- gapminder[gapminder$continent == "Africa", ]
 
-# Check the structure and summary of africadata
+#Check the structure and summary of africadata
 str(africadata)
 summary(africadata)
 
-# Create a dataset with infant mortality and life expectancy
+#Create a dataframe with infant mortality and life expectancy
 africa_mort_life <- africadata[, c("infant_mortality", "life_expectancy")]
 
-# Inspect the structure and summary
+#Inspect the structure and summary
 str(africa_mort_life)
 summary(africa_mort_life)
 
-# Create a dataset with population and life expectancy
+#Create a dataframe with population and life expectancy
 africa_pop_life <- africadata[, c("population", "life_expectancy")]
 
-# Inspect the structure and summary
+#Inspect the structure and summary
 str(africa_pop_life)
 summary(africa_pop_life)
 ```
 
 This analysis looks at African countries using the Gapminder dataset on R. The data is first subset to only include African countries. Then two smaller datasets are created to look at life expectancy with infant mortality and population with infant mortality. 
+
+```{r}
+#Plot life expectancy vs infant mortality for African countries
+#Using the plot function to make the plot
+plot(
+    #Using the infant_mortality column and makes them the x-axis values
+  africa_mort_life$infant_mortality,
+  #Using the life_expectancy column and makes them the y-axis values
+  africa_mort_life$life_expectancy,
+  #labels the x-axis infant mortality and the y-axis Life expectancy
+  xlab = "Infant Mortality",
+  ylab = "Life Expectancy",
+  #Makes the title of the plot Life expectancy vs infant mortality in Africa
+  main = "Life Expectancy vs Infant Mortality in Africa",
+  pch = 16
+)
+
+
+#Plot life expectancy vs population size for African countries
+#Using the plot function to make the plot
+plot(
+    #Using the population column and makes them the x-axis values
+  africa_pop_life$population,
+  #Using the life expectancy column and makes them the y-axis values
+  africa_pop_life$life_expectancy,
+  #labels the x-axis population size and the y-axis Life expectancy
+  xlab = "Population Size (log scale)",
+  ylab = "Life Expectancy",
+  #Makes the title of the plot Life expectancy vs population size in Africa
+  main = "Life Expectancy vs Population Size in Africa",
+  pch = 16,
+  #Setting the scale of the x-axis to be logarithmic
+  log = "x"
+)
+```
+
+The first plot shows a negative relationship between infant mortality and life expectancy. The second plot shows a positive relationship between population size and life expectancy. The streaks in the plots are most likley due to individual countries obsereved over multiple years. This shows more in the second plot because there is data for the same countries over several years, which is likely to show gradual differences. These gradual differences may form streaks in the plots.
+
+```{r}
+#Identifies which years have missing data for infant mortality 
+#is.na() functions chacks if each value in the dataframe is NA or not
+missing_im <- is.na(africadata$infant_mortality)
+
+#Lists the years when infant mortality is missing
+missing_years <- sort(unique(africadata$year[missing_im]))
+missing_years
+
+#Extract data for the year 2000 only
+africa_2000 <- africadata[africadata$year == 2000, ]
+
+#Check the structure of the new dataset
+str(africa_2000)
+
+#View summary statistics for the year 2000 data
+summary(africa_2000)
+
+#Plot life expectancy vs infant mortality for Africa in the year 2000
+#Using the plot function to make the plot
+plot(
+     #Using the infant mortality column and makes them the x-axis values
+  africa_2000$infant_mortality,
+   #Using the life expectancy column and makes them the y-axis values
+  africa_2000$life_expectancy,
+  #labels the x-axis infant mortality and the y-axis Life expectancy
+  xlab = "Infant Mortality",
+  ylab = "Life Expectancy",
+  #Makes the title of the plot Life expectancy vs infant mortality in Africa in 2000
+  main = "Life Expectancy vs Infant Mortality in Africa in 2000",
+  pch = 16
+)
+
+# Plot life expectancy vs population size for Africa in the year 2000
+#Using the plot function to make the plot
+plot(
+     #Using the population column and makes them the x-axis values
+  africa_2000$population,
+   #Using the life expectancy column and makes them the y-axis values
+  africa_2000$life_expectancy,
+  #labels the x-axis population size and the y-axis Life expectancy
+  xlab = "Population Size (log scale)",
+  ylab = "Life Expectancy",
+  #Makes the title of the plot Life expectancy vs population size in Africa in 2000
+  main = "Life Expectancy vs Population Size in Africa in 2000",
+  pch = 16,
+  #Setting the scale of the x-axis to be logarithmic
+  log = "x"
+)
+
+#Models life expectancy as a function of infant mortality
+#lm is used to fit linear models
+lm_infant <- lm(life_expectancy ~ infant_mortality, data = africa_2000)
+
+# Models life expectancy as a function of population size
+lm_population <- lm(life_expectancy ~ population, data = africa_2000)
+
+# prints results for both models
+summary(lm_infant)
+summary(lm_population)
+```
+
+The relationship between life expectancy and infant mortality are highly significant, and negatively correlated. The negative correlation is indicated by the negative slope. The relationship between population size and life expectancy is not significant because the p-value is 0.6159.
