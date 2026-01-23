@@ -141,3 +141,97 @@ summary(lm_population)
 ```
 
 The relationship between life expectancy and infant mortality are highly significant, and negatively correlated. The negative correlation is indicated by the negative slope. The relationship between population size and life expectancy is not significant because the p-value is 0.6159.
+
+
+## Additional contribution
+
+This section contributed by Kexin (Cassie) Cui.
+
+### Data overview
+Dataset picked from dslabs: admissions
+```{r}
+# Load required packages
+library(dplyr)    
+library(ggplot2) 
+
+# Load the dataset into the session
+data("admissions") 
+
+# Preview the first 6 rows
+head(admissions) 
+
+# Get basic summary statistics for each column
+summary(admissions) 
+
+# Check for missing values in each column
+colSums(is.na(admissions)) 
+
+```
+
+### Descriptive analysis and visualization
+
+```{r}
+# Compute total applicants and mean admission percentage by gender
+admissions |> 
+  group_by(gender) |> 
+  summarize(
+    total_applicants   = sum(applicants), 
+    mean_admitted_pct  = mean(admitted), 
+    .groups = "drop"           
+  )
+
+ggplot(admissions, aes(x = major, y = applicants, fill = gender)) +
+  geom_col(position = "dodge") +
+  labs(
+    x = "Major",
+    y = "Number of applicants",
+    fill = "Gender"
+  )
+
+# Plot applicants by major, faceted by gender
+ggplot(admissions, aes(x = major, y = applicants)) + 
+  geom_col() +             
+  facet_wrap(~ gender) +                             # separate panels by gender
+  labs(
+    x = "Major",                                     
+    y = "Number of applicants"                      
+  )
+
+# Plot admission percentage by major and gender
+ggplot(admissions, aes(x = major, y = admitted, group = gender)) + 
+  geom_point(size = 2) +                  
+  geom_line() +                                                  
+  facet_wrap(~ gender) + 
+  labs(
+    x = "Major",                                                 
+    y = "Admission percentage"                           
+  )
+
+```
+
+
+### Binomial logistic regression for admission outcome
+
+```{r}
+
+# Create integer counts for admitted and rejected applicants
+admissions_glm <- admissions |>
+  mutate(
+    admitted_num = round(admitted * applicants / 100),  
+    rejected_num = applicants - admitted_num   
+  )
+
+# Fit a binomial logistic regression model
+# Outcome: number admitted out of total applicants
+# Predictors: gender and major
+glm1 <- glm(
+  cbind(admitted_num, rejected_num) ~ gender + major,
+  family = binomial(link = "logit"),
+  data = admissions_glm
+)
+
+# Display model results
+summary(glm1)
+```
+
+After fitting a binomial logistic regression model, gender was not a significant predictor of admission probability after adjusting for major (p = 0.217). In contrast, admission rates differed substantially across majors, with several majors showing much lower odds of admission compared to Major A (p < 0.001). The large reduction in deviance indicates that major explains most of the variation in admission outcomes.
