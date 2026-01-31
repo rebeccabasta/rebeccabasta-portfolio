@@ -1,6 +1,8 @@
 project: 
   type: website
   output-dir: docs
+  resources:
+    - ready-exercise/
 
 website:
   title: "Rebecca Basta Data Analysis Portfolio"
@@ -13,7 +15,7 @@ website:
           - text: "Starter Analysis Exercise"
             file: starter-analysis-exercise/starter-analysis-exercise.qmd
           - text: "READy Exercise"
-            file: ready-exercise.html
+            href: ready-exercise/
     right:
       - icon: github 
         href: https://github.com/rebeccabasta/rebeccabasta-portfolio       
