@@ -12,7 +12,7 @@ website:
         menu:
           - text: "Starter Analysis Exercise"
             file: starter-analysis-exercise/starter-analysis-exercise.qmd
-          - text: "READy Exercise"
+            text: "READy Exercise"
             file: ready-exercise.html
     right:
       - icon: github 
