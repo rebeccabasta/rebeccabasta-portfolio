@@ -1,1 +1,237 @@
+---
+title: "Data Analysis"
+---
+```{r}
+#load dslabs package
+library(dslabs)
+library(tidyverse)
 
+#help(gapminder)
+#The str functions is used to look at observations and variables in the dataset  
+str(gapminder)
+
+#get a summary of data
+summary(gapminder)
+
+#determine the type of object gapminder is
+#The class function is a data frame that allows us to look at a class of the dataset
+class(gapminder)
+
+#Using the gapminder dataset, I've created a new dataframe that will only include countries that have Africa as the continent
+africadata <- gapminder[gapminder$continent == "Africa", ]
+
+#Check the structure and summary of africadata
+str(africadata)
+summary(africadata)
+
+#Create a dataframe with infant mortality and life expectancy
+africa_mort_life <- africadata[, c("infant_mortality", "life_expectancy")]
+
+#Inspect the structure and summary
+str(africa_mort_life)
+summary(africa_mort_life)
+
+#Create a dataframe with population and life expectancy
+africa_pop_life <- africadata[, c("population", "life_expectancy")]
+
+#Inspect the structure and summary
+str(africa_pop_life)
+summary(africa_pop_life)
+```
+
+This analysis looks at African countries using the Gapminder dataset on R. The data is first subset to only include African countries. Then two smaller datasets are created to look at life expectancy with infant mortality and population with infant mortality. 
+
+```{r}
+#Plot life expectancy vs infant mortality for African countries
+#Using the plot function to make the plot
+plot(
+    #Using the infant_mortality column and makes them the x-axis values
+  africa_mort_life$infant_mortality,
+  #Using the life_expectancy column and makes them the y-axis values
+  africa_mort_life$life_expectancy,
+  #labels the x-axis infant mortality and the y-axis Life expectancy
+  xlab = "Infant Mortality",
+  ylab = "Life Expectancy",
+  #Makes the title of the plot Life expectancy vs infant mortality in Africa
+  main = "Life Expectancy vs Infant Mortality in Africa",
+  pch = 16
+)
+
+
+#Plot life expectancy vs population size for African countries
+#Using the plot function to make the plot
+plot(
+    #Using the population column and makes them the x-axis values
+  africa_pop_life$population,
+  #Using the life expectancy column and makes them the y-axis values
+  africa_pop_life$life_expectancy,
+  #labels the x-axis population size and the y-axis Life expectancy
+  xlab = "Population Size (log scale)",
+  ylab = "Life Expectancy",
+  #Makes the title of the plot Life expectancy vs population size in Africa
+  main = "Life Expectancy vs Population Size in Africa",
+  pch = 16,
+  #Setting the scale of the x-axis to be logarithmic
+  log = "x"
+)
+```
+
+The first plot shows a negative relationship between infant mortality and life expectancy. The second plot shows a positive relationship between population size and life expectancy. The streaks in the plots are most likley due to individual countries obsereved over multiple years. This shows more in the second plot because there is data for the same countries over several years, which is likely to show gradual differences. These gradual differences may form streaks in the plots.
+
+```{r}
+#Identifies which years have missing data for infant mortality 
+#is.na() functions chacks if each value in the dataframe is NA or not
+missing_im <- is.na(africadata$infant_mortality)
+
+#Lists the years when infant mortality is missing
+missing_years <- sort(unique(africadata$year[missing_im]))
+missing_years
+
+#Extract data for the year 2000 only
+africa_2000 <- africadata[africadata$year == 2000, ]
+
+#Check the structure of the new dataset
+str(africa_2000)
+
+#View summary statistics for the year 2000 data
+summary(africa_2000)
+
+#Plot life expectancy vs infant mortality for Africa in the year 2000
+#Using the plot function to make the plot
+plot(
+     #Using the infant mortality column and makes them the x-axis values
+  africa_2000$infant_mortality,
+   #Using the life expectancy column and makes them the y-axis values
+  africa_2000$life_expectancy,
+  #labels the x-axis infant mortality and the y-axis Life expectancy
+  xlab = "Infant Mortality",
+  ylab = "Life Expectancy",
+  #Makes the title of the plot Life expectancy vs infant mortality in Africa in 2000
+  main = "Life Expectancy vs Infant Mortality in Africa in 2000",
+  pch = 16
+)
+
+# Plot life expectancy vs population size for Africa in the year 2000
+#Using the plot function to make the plot
+plot(
+     #Using the population column and makes them the x-axis values
+  africa_2000$population,
+   #Using the life expectancy column and makes them the y-axis values
+  africa_2000$life_expectancy,
+  #labels the x-axis population size and the y-axis Life expectancy
+  xlab = "Population Size (log scale)",
+  ylab = "Life Expectancy",
+  #Makes the title of the plot Life expectancy vs population size in Africa in 2000
+  main = "Life Expectancy vs Population Size in Africa in 2000",
+  pch = 16,
+  #Setting the scale of the x-axis to be logarithmic
+  log = "x"
+)
+
+#Models life expectancy as a function of infant mortality
+#lm is used to fit linear models
+lm_infant <- lm(life_expectancy ~ infant_mortality, data = africa_2000)
+
+# Models life expectancy as a function of population size
+lm_population <- lm(life_expectancy ~ population, data = africa_2000)
+
+# prints results for both models
+summary(lm_infant)
+summary(lm_population)
+```
+
+The relationship between life expectancy and infant mortality are highly significant, and negatively correlated. The negative correlation is indicated by the negative slope. The relationship between population size and life expectancy is not significant because the p-value is 0.6159.
+
+
+## Additional contribution
+
+This section contributed by Kexin (Cassie) Cui.
+
+### Data overview
+Dataset picked from dslabs: admissions
+```{r}
+# Load required packages
+library(dplyr)    
+library(ggplot2) 
+
+# Load the dataset into the session
+data("admissions") 
+
+# Preview the first 6 rows
+head(admissions) 
+
+# Get basic summary statistics for each column
+summary(admissions) 
+
+# Check for missing values in each column
+colSums(is.na(admissions)) 
+
+```
+
+### Descriptive analysis and visualization
+
+```{r}
+# Compute total applicants and mean admission percentage by gender
+admissions |> 
+  group_by(gender) |> 
+  summarize(
+    total_applicants   = sum(applicants), 
+    mean_admitted_pct  = mean(admitted), 
+    .groups = "drop"           
+  )
+
+ggplot(admissions, aes(x = major, y = applicants, fill = gender)) +
+  geom_col(position = "dodge") +
+  labs(
+    x = "Major",
+    y = "Number of applicants",
+    fill = "Gender"
+  )
+
+# Plot applicants by major, faceted by gender
+ggplot(admissions, aes(x = major, y = applicants)) + 
+  geom_col() +             
+  facet_wrap(~ gender) +                             # separate panels by gender
+  labs(
+    x = "Major",                                     
+    y = "Number of applicants"                      
+  )
+
+# Plot admission percentage by major and gender
+ggplot(admissions, aes(x = major, y = admitted, group = gender)) + 
+  geom_point(size = 2) +                  
+  geom_line() +                                                  
+  facet_wrap(~ gender) + 
+  labs(
+    x = "Major",                                                 
+    y = "Admission percentage"                           
+  )
+
+```
+
+
+### Binomial logistic regression for admission outcome
+
+```{r}
+
+# Create integer counts for admitted and rejected applicants
+admissions_glm <- admissions |>
+  mutate(
+    admitted_num = round(admitted * applicants / 100),  
+    rejected_num = applicants - admitted_num   
+  )
+
+# Fit a binomial logistic regression model
+# Outcome: number admitted out of total applicants
+# Predictors: gender and major
+glm1 <- glm(
+  cbind(admitted_num, rejected_num) ~ gender + major,
+  family = binomial(link = "logit"),
+  data = admissions_glm
+)
+
+# Display model results
+summary(glm1)
+```
+
+After fitting a binomial logistic regression model, gender was not a significant predictor of admission probability after adjusting for major (p = 0.217). In contrast, admission rates differed substantially across majors, with several majors showing much lower odds of admission compared to Major A (p < 0.001). The large reduction in deviance indicates that major explains most of the variation in admission outcomes.
