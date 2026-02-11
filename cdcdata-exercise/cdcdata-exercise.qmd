@@ -1,0 +1,48 @@
+This dataset comes from CDC's Smoking-Attributable Mortality, Morbidity, and Economic Costs (SAMMEC). It looks at estimates of smoking-attributable health costs (millions of dollars)catergorized by states during the years of 2005-2009. 
+
+Link to the source: https://data.cdc.gov/Health-Consequences-and-Costs/Smoking-Attributable-Mortality-Morbidity-and-Econo/ezab-8sq5/about_data
+
+```{r}
+# File path (your uploaded CSV in this workspace)
+file_path <- "../cdc-exercise/sae.csv"
+
+
+## Read the data
+sae_raw <- read.csv(file_path, stringsAsFactors = FALSE, na.strings = c("", "NA", "N/A"))
+str(sae_raw)
+head(sae_raw)
+
+## Clean Data_Value
+sae_raw$Data_Value <- as.numeric(gsub(",", "", sae_raw$Data_Value))
+
+## GeoLocation
+if ("GeoLocation" %in% names(sae_raw)) {
+  get_num <- function(x, which_num = 1) {
+    m <- regmatches(x, gregexpr("-?\\d+\\.?\\d*", x))
+    out <- sapply(m, function(v) if (length(v) >= which_num) v[which_num] else NA_character_)
+    as.numeric(out)
+  }
+  sae_raw$Latitude  <- get_num(sae_raw$GeoLocation, 1)
+  sae_raw$Longitude <- get_num(sae_raw$GeoLocation, 2)
+}
+
+## Variables
+sae <- sae_raw[, c(
+  "Year",
+  "LocationAbbr",
+  "LocationDesc",
+  "TopicDesc",
+  "MeasureDesc",
+  "Variable",
+  "Data_Value",
+  "Data_Value_Type",
+  "Data_Value_Unit"
+)]
+
+## Summary
+summary(sae)
+anyNA(sae$Data_Value)   # check missing numeric values
+
+# Example: show a few rows after cleaning
+head(sae, 10)
+```
