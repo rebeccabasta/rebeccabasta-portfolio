@@ -105,3 +105,124 @@ ggplot(sae, aes(x = reorder(LocationDesc, Data_Value, median),
 ```
 
 The boxplot shows a lot of variability in smoking-attributable expenditures across states. Most states have low expenditure values, while a few states have higher expenditure values, which is why the boxplot is skewed to the right. The differences across states could be because of geographic and population factors.
+
+
+## Synthetic data (This section contributed by Cassie Cui)
+```{r}
+# AI Assistance:
+# I used an LLM to help draft general R code for generating a synthetic dataset with the same column structure as the cleaned data. I described the # panel structure (Year, Location, expense category) and that the outcome variable was right-skewed.
+
+library(dplyr)
+library(lubridate)
+
+set.seed(123)
+
+# Define number of rows to generate (match the cleaned data)
+n_obs <- nrow(sae)
+
+
+syn_dat <- data.frame(
+  Year            = integer(n_obs),
+  LocationAbbr    = character(n_obs),
+  LocationDesc    = character(n_obs),
+  Variable        = character(n_obs),
+  TopicDesc       = character(n_obs),
+  MeasureDesc     = character(n_obs),
+  Data_Value      = numeric(n_obs),
+  Data_Value_Type = character(n_obs),
+  Data_Value_Unit = character(n_obs),
+  stringsAsFactors = FALSE
+)
+# Year
+year_levels <- sort(unique(sae$Year))
+year_prob <- as.numeric(prop.table(table(sae$Year)))
+syn_dat$Year <- sample(year_levels, size = n_obs, replace = TRUE, prob = year_prob)
+
+# LocationAbbr
+loc_levels <- unique(sae$LocationAbbr)
+loc_prob <- as.numeric(prop.table(table(sae$LocationAbbr)))
+syn_dat$LocationAbbr <- sample(loc_levels, size = n_obs, replace = TRUE, prob = loc_prob)
+
+# Map Abbr -> Desc (lookup, no join)
+loc_tbl <- sae %>% select(LocationAbbr, LocationDesc) %>% distinct()
+syn_dat$LocationDesc <- loc_tbl$LocationDesc[match(syn_dat$LocationAbbr, loc_tbl$LocationAbbr)]
+
+# Variable
+var_levels <- unique(as.character(sae$Variable))
+var_prob <- as.numeric(prop.table(table(as.character(sae$Variable))))
+syn_dat$Variable <- sample(var_levels, size = n_obs, replace = TRUE, prob = var_prob)
+
+# Fill label/metadata columns 
+syn_dat$TopicDesc <- if ("TopicDesc" %in% names(sae)) {
+  sae$TopicDesc[which(!is.na(sae$TopicDesc))[1]]
+} else "Smoking-Attributable Expenditures (SAEs)"
+
+syn_dat$MeasureDesc <- if ("MeasureDesc" %in% names(sae)) {
+  sae$MeasureDesc[which(!is.na(sae$MeasureDesc))[1]]
+} else "Type of Expense"
+
+syn_dat$Data_Value_Type <- if ("Data_Value_Type" %in% names(sae)) {
+  sae$Data_Value_Type[which(!is.na(sae$Data_Value_Type))[1]]
+} else "Millions of Dollars"
+
+syn_dat$Data_Value_Unit <- if ("Data_Value_Unit" %in% names(sae)) {
+  sae$Data_Value_Unit[which(!is.na(sae$Data_Value_Unit))[1]]
+} else "$"
+
+# Generate synthetic Data_Value (right-skewed) by Variable
+syn_dat$Data_Value <- NA_real_
+vars <- unique(var_levels)
+
+
+
+for (v in vars) {
+  idx <- syn_dat$Variable == v
+
+  x <- sae$Data_Value[as.character(sae$Variable) == v]
+  x <- x[is.finite(x) & !is.na(x)]
+  x <- pmax(x, 1e-6)  # guard against zeros
+
+  meanlog_v <- mean(log(x))
+  sdlog_v   <- sd(log(x))
+
+  syn_dat$Data_Value[idx] <- round(rlnorm(sum(idx), meanlog = meanlog_v, sdlog = sdlog_v), 1)
+}
+
+dim(syn_dat)
+head(syn_dat)
+
+```
+
+```{r}
+ggplot(syn_dat, aes(x = Data_Value)) +
+  geom_histogram(bins = 30) +
+  labs(title = "Synthetic Distribution of SAEs")
+
+
+ggplot(syn_dat, aes(y = Data_Value)) +
+  geom_boxplot() +
+  labs(title = "Synthetic Boxplot of SAEs")
+
+
+syn_dat %>%
+  group_by(Year) %>%
+  summarise(mean_val = mean(Data_Value)) %>%
+  ggplot(aes(x = Year, y = mean_val)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Synthetic Mean by Year")
+
+
+syn_dat %>%
+  group_by(LocationDesc) %>%
+  summarise(mean_val = mean(Data_Value)) %>%
+  ggplot(aes(x = reorder(LocationDesc, mean_val), y = mean_val)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Synthetic Mean by State")
+
+```
+
+The synthetic dataset preserves the same panel structure and the overall right-skewed distribution of Data_Value. Because values were simulated independently (within expense categories), the year-to-year mean trend is not forced to match the original increasing pattern, so some fluctuations are expected.
+
+The synthetic data preserves the marginal distributions of Year, Location, and expense category, as well as the overall right-skewed pattern of expenditures. However, because state-level effects were not explicitly modeled, the ranking and spread of mean expenditures across states differ from the original dataset. This reflects the independence assumptions in the simulation.
