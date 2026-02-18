@@ -1,0 +1,221 @@
+---
+title: "Presentation Exercise"
+---
+
+## Prompt 1: 
+I’m using FiveThirtyEight’s nbaallelo.csv. How can I recreate a ‘winning odds’ graph like the overlapping home vs away distributions?
+
+```{r}
+library(tidyverse)
+library(gt)
+library(gtExtras)
+library(scales)
+```
+
+# Load and summarize data
+```{r}
+nba <- read_csv("nbaallelo.csv")
+glimpse(nba)
+summary(nba)
+```
+
+# Convert data to plot
+```{r}
+
+# Keep only one row per game (home team rows)
+home_games <- nba %>%
+  mutate(forecast = as.numeric(forecast)) %>%
+  filter(year_id >= 2010,
+         game_location == "H",
+         !is.na(forecast)) %>%
+  transmute(
+    p_home = forecast,
+    p_away = 1 - forecast
+  )
+
+# Convert format to plot
+odds_long <- home_games %>%
+  pivot_longer(
+    cols = c(p_home, p_away),
+    names_to = "side",
+    values_to = "win_prob"
+  ) %>%
+  mutate(
+    side = recode(side,
+                  p_home = "Home Team",
+                  p_away = "Away Team")
+  )
+```
+
+## Prompt 2: 
+Can you write ggplot code to plot win probability distributions for home vs away teams (2010+), and make it look professional?
+
+## Prompt 3: 
+Add a dashed vertical reference line at 50%.
+
+## Plot
+```{r}
+p <- ggplot(odds_long, aes(x = win_prob, fill = side)) +
+  geom_histogram(
+    aes(y = after_stat(density)),
+    bins = 45,
+    alpha = 0.65,
+    position = "identity"
+  ) +
+  geom_vline(
+    xintercept = 0.5,
+    linetype = "dashed",
+    linewidth = 0.7,
+    color = "gray40"
+  ) +
+  scale_x_continuous(
+    limits = c(0, 1),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Winning odds for NBA games (2010+)",
+    subtitle = "Pregame Elo win probabilities; home team distribution is shifted higher",
+    x = "Win probability",
+    y = "Density",
+    fill = NULL,
+    caption = "Source: FiveThirtyEight nba-elo (nbaallelo.csv)"
+  ) +
+  theme_classic(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12),
+    legend.position = "top",
+    axis.title = element_text(face = "bold")
+  )
+
+# Print the plot
+p
+```
+
+## Original Plot
+![](original-odds.png)
+
+# Save plot
+```{r}
+ggsave(
+  filename = "reproduced-odds.png",
+  plot = p,
+  width = 8,
+  height = 5,
+  dpi = 300
+)
+```
+
+## Publication Quality Table
+
+## Prompt 1 
+Write R code to create a professional table with: bold/italic text, conditional formatting, a spanner header, a caption, and a footnote.
+
+## Prompt 2
+Add an advanced feature like sparklines and make the formatting automatic.
+
+## Convert data to put into the table
+```{r}
+# Game-level home win probability (one row per game)
+games_home <- nba %>%
+  mutate(forecast = as.numeric(forecast)) %>%
+  filter(game_location == "H", !is.na(forecast)) %>%
+  transmute(
+    year_id,
+    p_home = forecast,
+    p_away = 1 - forecast
+  )
+
+# Summary stats by season
+season_summary <- games_home %>%
+  group_by(year_id) %>%
+  summarise(
+    games = n(),
+    mean_home = mean(p_home),            
+    mean_away = mean(p_away),        
+    median_home = median(p_home),
+    home_adv = mean_home - mean_away,    # == 2*mean_home - 1
+    .groups = "drop"
+  )
+
+# Home team distribution over probability bins per season 
+bin_edges <- seq(0, 1, by = 0.05)
+
+spark_data <- games_home %>%
+  mutate(bin = cut(p_home, breaks = bin_edges, include.lowest = TRUE)) %>%
+  count(year_id, bin) %>%
+  group_by(year_id) %>%
+  summarise(spark = list(n), .groups = "drop")
+
+tbl_data <- season_summary %>%
+  left_join(spark_data, by = "year_id") %>%
+  arrange(desc(year_id)) %>%
+  slice(1:12) 
+```
+
+# Table
+```{r}
+tbl_data %>%
+  gt(rowname_col = "year_id") %>%
+  tab_header(
+    title = md("**Home-court advantage in FiveThirtyEight Elo forecasts**"),
+    subtitle = "Season-level summary of pregame win probabilities (home vs away)"
+  ) %>%
+  tab_caption(
+    md("*Caption:* This table summarizes how strongly the Elo model favored home teams across seasons. Higher **Home advantage** indicates larger model-implied home edge.")
+  ) %>%
+  tab_spanner(
+    label = md("**Average win probability**"),
+    columns = c(mean_home, mean_away, median_home)
+  ) %>%
+  cols_label(
+    mean_home = "Home (mean)",
+    mean_away = "Away (mean)",
+    median_home = "Home (median)",
+    home_adv = "Home advantage",
+    games = "Games",
+    spark = "Home odds shape"
+  ) %>%
+  fmt_percent(columns = c(mean_home, mean_away, median_home, home_adv), decimals = 1) %>%
+  fmt_number(columns = games, decimals = 0) %>%
+
+  tab_stubhead(label = md("**Season**<br><span style='font-weight:normal; font-style:italic;'>year_id</span>")) %>%
+
+  data_color(
+    columns = home_adv,
+    method = "numeric",
+    palette = c("#f7fbff", "#6baed6", "#08306b")
+  ) %>%
+  data_color(
+    columns = mean_home,
+    method = "numeric",
+    palette = c("#fff5f0", "#fc9272", "#cb181d")
+  ) %>%
+
+  tab_style(
+    style = list(cell_text(weight = "bold")),
+    locations = cells_body(
+      columns = home_adv,
+      rows = home_adv == max(home_adv, na.rm = TRUE)
+    )
+  ) %>%
+
+  gt_plt_sparkline(
+    column = spark,
+    same_limit = TRUE
+  ) %>%
+ 
+# Footnote
+  tab_footnote(
+    footnote = "Forecast is the Elo-based pregame win probability in nbaallelo.csv. Away probability is computed as 1 − home probability using the home-team row per game.",
+    locations = cells_column_labels(columns = c(mean_home, mean_away))
+  ) %>%
+
+  # Clean up
+  tab_options(
+    table.font.size = px(13),
+    data_row.padding = px(3),
+    heading.title.font.size = px(18),
+    heading.subtitle.font.size = px(13)
+  )
+```
