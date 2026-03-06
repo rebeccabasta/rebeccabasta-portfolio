@@ -1,0 +1,258 @@
+---
+title: "Fitting Exercise"
+---
+
+# Load and summarize data
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(GGally)
+library(tidymodels)
+
+mavo <- read_csv("Mavoglurant.csv")
+
+glimpse(mavo)
+dim(mavo)
+```
+
+# Convert data to plot
+```{r}
+ggplot(mavo, aes(x = TIME, y = DV, group = ID, color = factor(DOSE))) +
+  geom_line(alpha = 0.6) +
+  labs(color = "Dose") +
+  theme_minimal()
+
+#only keeping observations with OCC = 1
+mavo_occ1 <- mavo %>%
+  filter(OCC == 1)
+
+table(mavo_occ1$OCC)
+```
+
+# Creates a data frame with time that is not equal to 0 and computes the sum of DV
+```{r}
+mavo_no0 <- mavo_occ1 %>%
+  filter(TIME != 0)
+
+Y_df <- mavo_no0 %>%
+  group_by(ID) %>%
+  summarize(Y = sum(DV, na.rm = TRUE))
+```
+
+# Creates a data frame with time = 0
+```{r}
+baseline_df <- mavo_occ1 %>%
+  filter(TIME == 0)
+```
+
+# Joins the tow data frames together
+```{r}
+final_df <- baseline_df %>%
+  left_join(Y_df, by = "ID")
+
+dim(final_df)
+```
+
+# Coverts race and sex to variable factors and cleans data
+```{r}
+clean_df <- final_df %>%
+  mutate(
+    SEX = factor(SEX),
+    RACE = factor(RACE)
+  ) %>%
+  select(Y, DOSE, AGE, SEX, RACE, WT, HT)
+
+summary(clean_df)
+```
+
+# Summary of data
+```{r}
+clean_df %>%
+  summarize(
+    n = n(),
+    mean_Y = mean(Y),
+    sd_Y = sd(Y),
+    mean_age = mean(AGE),
+    mean_WT = mean(WT),
+    mean_HT = mean(HT)
+  )
+```
+This summary table shows that there are 120 indivduals and it shows the the mean and standard deviation of drug exposure, and the mean od age, WT, and HT.
+
+# Summary grouped by dose 
+```{r}
+  clean_df %>%
+  group_by(DOSE) %>%
+  summarize(
+    n = n(),
+    mean_Y = mean(Y),
+    sd_Y = sd(Y),
+    mean_WT = mean(WT),
+    mean_AGE = mean(AGE)
+  )
+```
+This summary table shows the relationship between dose and exposure. As dose increases, total exposure decreases.
+
+# Summary grouped by sex
+```{r}
+  clean_df %>%
+  group_by(SEX) %>%
+  summarize(
+    n = n(),
+    mean_Y = mean(Y),
+    mean_WT = mean(WT)
+  )
+```
+This summary table shows the data grouped by sex. Sex 1 has 104 individuals and sex 2 has 16 individuals. 
+
+# Plot y versus dose
+```{r}
+ggplot(clean_df, aes(x = factor(DOSE), y = Y)) +
+  geom_boxplot() +
+  labs(x = "Dose", y = "Total Drug (Y)") +
+  theme_minimal()
+```
+This boxplot shows total drug exposure versus dose; the higher the dose is associated with drug exposure.
+
+# Plot y versus age
+```{r}
+  ggplot(clean_df, aes(x = AGE, y = Y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_minimal()
+```
+This scatterplot shows total drug exposure versus age; there is no relationship between the two variables.
+
+# Distribution of Y
+```{r}
+ggplot(clean_df, aes(x = Y)) +
+  geom_histogram(bins = 20) +
+  theme_minimal()
+```
+This histogram shows total drug exposure skewed to the right. This means that most individuals have exposure values between 1500 and 3500, but a few individuals have high exposure values.
+
+# Distribution of HT
+```{r}
+  ggplot(clean_df, aes(x = HT)) +
+  geom_histogram(bins = 15) +
+  theme_minimal()
+```
+The histogram shoes height with a normal distribution with most idividuals within 1.60 to 1.90 meters.
+
+# Correlation matrix 
+```{r}
+numeric_df <- clean_df %>%
+  select(Y, AGE, WT, HT)
+
+cor(numeric_df)
+```
+This correlation matrix shows the strength and whether the relationship is positive or negative between total drug exposure, age, height, and weight. +1 menas there is a positive relationship, 0 means there is no relationship, and -1 means there is a negative relationship.
+
+# Correlation matrix plot plot
+```{r}
+ggpairs(clean_df,
+        columns = c("Y", "AGE", "WT", "HT"),
+        aes(color = factor(DOSE)))
+```
+This correlation matrix plot shows the same relationships as the correlation matrix table.
+
+# Model fitting
+```{r}
+set.seed(123)
+
+data_split <- initial_split(clean_df, prop = 0.8, strata = SEX)
+
+train_data <- training(data_split)
+test_data  <- testing(data_split)
+```
+
+# Fitting the linear model to the continous outcome of Y using dose as the main predictor
+```{r}
+lm_spec <- linear_reg() %>%
+  set_engine("lm")
+
+lm_dose <- workflow() %>%
+  add_model(lm_spec) %>%
+  add_formula(Y ~ DOSE)
+
+lm_dose_fit <- fit(lm_dose, data = train_data)
+
+pred_dose <- predict(lm_dose_fit, test_data) %>%
+  bind_cols(test_data)
+
+  metrics_dose <- pred_dose %>%
+  metrics(truth = Y, estimate = .pred)
+
+metrics_dose
+```
+
+# Fitting the linear model to the continous outcome of Y using all the predictors
+```{r}
+lm_all <- workflow() %>%
+  add_model(lm_spec) %>%
+  add_formula(Y ~ DOSE + AGE + SEX + RACE + WT + HT)
+
+lm_all_fit <- fit(lm_all, data = train_data)
+
+pred_all <- predict(lm_all_fit, test_data) %>%
+  bind_cols(test_data)
+
+metrics_all <- pred_all %>%
+  metrics(truth = Y, estimate = .pred)
+
+metrics_all
+```
+
+# Fitting the logistic model to the continous outcome of sex using dose as the main predictor
+```{r}
+log_spec <- logistic_reg() %>%
+  set_engine("glm")
+
+log_dose <- workflow() %>%
+  add_model(log_spec) %>%
+  add_formula(SEX ~ DOSE)
+
+log_dose_fit <- fit(log_dose, data = train_data)
+
+pred_log_dose <- predict(log_dose_fit, test_data, type = "prob") %>%
+  bind_cols(
+    predict(log_dose_fit, test_data),
+    test_data
+  )
+
+pred_log_dose %>%
+  metrics(truth = SEX, estimate = .pred_class)
+
+pred_log_dose %>%
+  roc_auc(truth = SEX, .pred_1)
+```
+
+# Fitting the logistic model to the continous outcome of Y using all the predictors
+```{r}
+log_all <- workflow() %>%
+  add_model(log_spec) %>%
+  add_formula(SEX ~ DOSE + AGE + RACE + WT + HT)
+
+log_all_fit <- fit(log_all, data = train_data)
+
+pred_log_all <- predict(log_all_fit, test_data, type = "prob") %>%
+  bind_cols(
+    predict(log_all_fit, test_data),
+    test_data
+  )
+
+pred_log_all %>%
+  metrics(truth = SEX, estimate = .pred_class)
+
+pred_log_all %>%
+  roc_auc(truth = SEX, .pred_1)
+```
+
+The first linear model is using dose as the only predictor of total drug exposure. It shows that the higher the dose, the higher the drug exposure is. 
+
+The second linear model is using all variables (age, dose, sex, race, height, and weight) as predictors of total drug exposure. It showed that dose was the strongest predictor of total drug exposure. 
+
+The first logistic model is using dose as the only predictor of sex. This model produced low ROC-AUC and accuracy values because there is no relationship between dose and sex.
+
+The second logistic model is using all the variables as predictors of sex. This model has higher ROC-AUC and accuracy values compared to the first model becuase height and weight can potentially be predictors of sex.
