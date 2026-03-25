@@ -256,3 +256,142 @@ The second linear model is using all variables (age, dose, sex, race, height, an
 The first logistic model is using dose as the only predictor of sex. This model produced low ROC-AUC and accuracy values because there is no relationship between dose and sex.
 
 The second logistic model is using all the variables as predictors of sex. This model has higher ROC-AUC and accuracy values compared to the first model becuase height and weight can potentially be predictors of sex.
+
+# Model Improvement 
+Excluding race as a variable
+```{r}
+rngseed = 1234
+
+clean_df <- final_df %>%
+  mutate(
+    SEX = factor(SEX)
+  ) %>%
+  select(Y, DOSE, AGE, SEX, WT, HT)
+
+dim(clean_df)
+summary(clean_df)
+```
+
+Setting test and train data
+```{r}
+set.seed(rngseed)
+
+data_split <- initial_split(clean_df, prop = 0.75)
+
+train_data <- training(data_split)
+test_data  <- testing(data_split)
+
+nrow(train_data)
+nrow(test_data)
+```
+
+# Linear models
+```{r}
+lm_spec <- linear_reg() %>%
+  set_engine("lm")
+```
+
+# Linear Model with Dose
+```{r}
+lm_dose_workflow <- workflow() %>%
+  add_model(lm_spec) %>%
+  add_formula(Y ~ DOSE)
+
+lm_dose_fit <- fit(lm_dose_workflow, data = train_data)
+
+lm_dose_pred <- predict(lm_dose_fit, new_data = train_data) %>%
+  bind_cols(train_data %>% select(Y))
+
+metrics (lm_dose_pred, truth = Y, estimate = .pred)
+```
+
+# Linear Model with all Predictors
+```{r}
+lm_all_workflow <- workflow() %>%
+  add_model(lm_spec) %>%
+  add_formula(Y ~ DOSE + AGE + SEX + WT + HT)
+
+lm_all_fit <- fit(lm_all_workflow, data = train_data)
+
+lm_all_pred <- predict(lm_all_fit, new_data = train_data) %>%
+  bind_cols(train_data %>% select(Y))
+
+metrics (lm_all_pred, truth = Y, estimate = .pred)
+```
+
+# Null model 
+```{r}
+mean_y <- mean(train_data$Y)
+
+null_pred <- train_data %>%
+  mutate(.pred = mean_y)
+
+rmse_null <- null_pred %>%
+  rmse(truth = Y, estimate = .pred)
+
+rmse_null
+```
+
+The null model, predicts the mean outcome for all observations, had the highest RSME being 948. This RSME value indicates that the predictive preformace of this model is poor. The model that used dose as the only predictor had a lower RSME value (703), this suggests that dose explains variability in the outcome. The model that uses all predictors had the lowest RSME (627), which indicates the best preformance. 
+
+```{r}
+set.seed(rngseed)
+
+# creates 10 fold CV split
+folds <- vfold_cv(train_data, v = 10)
+```
+
+# Model using Dose
+```{r}
+lm_dose_workflow <- workflow() %>%
+  add_model(lm_spec) %>%
+  add_formula(Y ~ DOSE)
+```
+
+# Model Using All Predictors 
+```{r}
+lm_all_workflow <- workflow() %>%
+  add_model(lm_spec) %>%
+  add_formula(Y ~ DOSE + AGE + SEX + WT + HT)
+```
+
+# Cross Validation
+```{r}
+  dose_cv <- fit_resamples(
+  lm_dose_workflow,
+  resamples = folds,
+  metrics = metric_set(rmse)
+)
+
+all_cv <- fit_resamples(
+  lm_all_workflow,
+  resamples = folds,
+  metrics = metric_set(rmse)
+)
+```
+
+# RSME and Standard Validation 
+```{r}
+dose_cv_results <- collect_metrics(dose_cv)
+all_cv_results  <- collect_metrics(all_cv)
+
+dose_cv_results
+all_cv_results
+```
+
+The RMSE values from the cros validation are a little higher than those from the training data, this could be because of less overfitting. This gives us a more realistic idea of the models preformance on new data. The model that used all the predictors still had the lowest RSME value, followed by the model that used dose as the only predictor, and the null model had the highest RSME value. The standard error values suggest that there is some variability in how the model preforms across folds, but the differences are consistent. 
+
+# Different Value for the Random Seed
+```{r}
+set.seed(999)
+
+folds2 <- vfold_cv(train_data, v = 10)
+
+dose_cv2 <- fit_resamples(lm_dose_workflow, resamples = folds2, metrics = metric_set(rmse))
+all_cv2  <- fit_resamples(lm_all_workflow, resamples = folds2, metrics = metric_set(rmse))
+
+collect_metrics(dose_cv2)
+collect_metrics(all_cv2)
+```
+
+Changing the random seed resulted in slightly different RSME values, this could be due to variation in how the data was split into the folds. The pattern stayed the same with the model that used all the predictors having the lowest RSME value, and the null model having the highest RSME value. 
