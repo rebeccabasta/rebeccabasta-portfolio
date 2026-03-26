@@ -302,7 +302,7 @@ lm_dose_fit <- fit(lm_dose_workflow, data = train_data)
 lm_dose_pred <- predict(lm_dose_fit, new_data = train_data) %>%
   bind_cols(train_data %>% select(Y))
 
-metrics (lm_dose_pred, truth = Y, estimate = .pred)
+metrics(lm_dose_pred, truth = Y, estimate = .pred)
 ```
 
 # Linear Model with all Predictors
@@ -316,7 +316,7 @@ lm_all_fit <- fit(lm_all_workflow, data = train_data)
 lm_all_pred <- predict(lm_all_fit, new_data = train_data) %>%
   bind_cols(train_data %>% select(Y))
 
-metrics (lm_all_pred, truth = Y, estimate = .pred)
+metrics(lm_all_pred, truth = Y, estimate = .pred)
 ```
 
 # Null model 
@@ -395,3 +395,134 @@ collect_metrics(all_cv2)
 ```
 
 Changing the random seed resulted in slightly different RSME values, this could be due to variation in how the data was split into the folds. The pattern stayed the same with the model that used all the predictors having the lowest RSME value, and the null model having the highest RSME value. 
+
+# This section added by Riley Herber
+
+## Predictions for each model
+```{r}
+# Dose model predictions
+dose_pred <- predict(lm_dose_fit, new_data = train_data) %>%
+  bind_cols(train_data %>% select(Y)) %>%
+  mutate(model = "Dose Model")
+
+# All predictor model predictions
+all_pred <- predict(lm_all_fit, new_data = train_data) %>%
+  bind_cols(train_data %>% select(Y)) %>%
+  mutate(model = "All Predictors Model")
+
+# Null model predictions
+null_pred <- train_data %>%
+  mutate(.pred = mean(train_data$Y),
+         model = "Null Model") %>%
+  select(Y, .pred, model)
+```
+
+## Combine predictions into one dataframe
+```{r}
+predictions_df <- bind_rows(
+  dose_pred %>% select(Y, .pred, model),
+  all_pred %>% select(Y, .pred, model),
+  null_pred
+)
+```
+
+## Observed vs Predicted
+
+```{r}
+ggplot(predictions_df, aes(x = Y, y = .pred, color = model, shape = model)) +
+  geom_point(alpha = 0.7) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 5000), ylim = c(0, 5000)) +
+  labs(
+    x = "Observed Values",
+    y = "Predicted Values",
+    color = "Model",
+    shape = "Model"
+  ) +
+  theme_minimal()
+```
+
+For the model that includes only dose as a predictor, the predicted values fall along three horizontal lines because the DOSE variable only takes three distinct values in the dataset. 
+
+## Plot All Predictors Model
+
+```{r}
+all_residuals <- predict(lm_all_fit, new_data = train_data) %>%
+  bind_cols(train_data %>% select(Y)) %>%
+  mutate(residual = .pred - Y)
+
+ggplot(all_residuals, aes(x = .pred, y = residual)) +
+  geom_point(alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  coord_cartesian(ylim = c(-2000, 2000)) +
+  labs(
+    x = "Predicted Values",
+    y = "Residuals (Predicted - Observed)",
+    title = "Residuals vs Predicted Values for Full Model"
+  ) +
+  theme_minimal()
+```
+
+# Model predictions and uncertainty
+
+```{r}
+library(rsample)
+library(purrr)
+
+set.seed(rngseed) 
+
+# 100 bootstrap resamples
+dat_bs <- bootstraps(train_data, times = 100)
+```
+
+## Fit the model on each bootstrap and make predictions for the original training data
+```{r}
+# store predictions
+pred_list <- map(dat_bs$splits, function(split) {
+
+dat_sample <- rsample::analysis(split)
+  
+  # fit full model on bootstrap sample
+  fit_bs <- lm(Y ~ DOSE + AGE + SEX + WT + HT, data = dat_sample)
+  
+  # predict on original training data
+  predict(fit_bs, newdata = train_data)
+})
+```
+
+## Combine predictions into a matrix
+```{r}
+pred_bs <- do.call(rbind, pred_list)
+dim(pred_bs) 
+```
+
+## Compute median and 89% confidence intervals
+```{r}
+preds_ci <- apply(pred_bs, 2, quantile, probs = c(0.055, 0.5, 0.945)) %>%
+  t() %>%
+  as.data.frame()
+
+colnames(preds_ci) <- c("lower", "median", "upper")
+preds_ci$observed <- train_data$Y
+preds_ci$predicted <- predict(lm_all_fit, new_data = train_data)$.pred
+```
+
+## Plot observed vs. predicted with uncertainty
+```{r}
+library(ggplot2)
+
+ggplot(preds_ci, aes(x = observed)) +
+  geom_point(aes(y = predicted), color = "black", alpha = 0.7) +        # original point estimate
+  geom_point(aes(y = median), color = "blue", alpha = 0.5) +             # median from bootstrap
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0, color = "red", alpha = 0.3) +  # CI
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 5000), ylim = c(0, 5000)) +
+  labs(
+    x = "Observed Values",
+    y = "Predicted Values",
+    title = "Observed vs Predicted Values with 89% Bootstrap Confidence Intervals"
+  ) +
+  theme_minimal()
+```
+
+The plot of observed versus predicted values with 89% bootstrap confidence intervals shows that the full linear model predicts total drug exposure reasonably well. The black points represent the original model predictions, and most lie close to the 45° line, indicating general agreement between observed and predicted values. The blue points, representing the median predictions from 100 bootstrap samples, largely overlap with the original predictions, demonstrating that the model is stable across resampled datasets. The red vertical lines indicate the 89% confidence intervals, which are relatively narrow for most observations, reflecting low prediction uncertainty, but are wider for a few individuals, likely corresponding to less typical combinations of predictor values. Overall, the pattern suggests that the model captures the main trends in the data, and the bootstrap confirms both the stability and the uncertainty of the predictions.
