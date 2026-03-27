@@ -332,7 +332,7 @@ rmse_null <- null_pred %>%
 rmse_null
 ```
 
-The null model, predicts the mean outcome for all observations, had the highest RSME being 948. This RSME value indicates that the predictive preformace of this model is poor. The model that used dose as the only predictor had a lower RSME value (703), this suggests that dose explains variability in the outcome. The model that uses all predictors had the lowest RSME (627), which indicates the best preformance. 
+The null model, predicts the mean outcome for all observations, had the highest RMSE being 948. This RMSE value indicates that the predictive preformace of this model is poor. The model that used dose as the only predictor had a lower RMSE value (703), this suggests that dose explains variability in the outcome. The model that uses all predictors had the lowest RMSE (627), which indicates the best preformance. 
 
 ```{r}
 set.seed(rngseed)
@@ -370,7 +370,7 @@ all_cv <- fit_resamples(
 )
 ```
 
-# RSME and Standard Validation 
+# RMSE and Standard Validation 
 ```{r}
 dose_cv_results <- collect_metrics(dose_cv)
 all_cv_results  <- collect_metrics(all_cv)
@@ -379,7 +379,7 @@ dose_cv_results
 all_cv_results
 ```
 
-The RMSE values from the cros validation are a little higher than those from the training data, this could be because of less overfitting. This gives us a more realistic idea of the models preformance on new data. The model that used all the predictors still had the lowest RSME value, followed by the model that used dose as the only predictor, and the null model had the highest RSME value. The standard error values suggest that there is some variability in how the model preforms across folds, but the differences are consistent. 
+The RMSE values from the cros validation are a little higher than those from the training data, this could be because of less overfitting. This gives us a more realistic idea of the models preformance on new data. The model that used all the predictors still had the lowest RMSE value, followed by the model that used dose as the only predictor, and the null model had the highest RMSE value. The standard error values suggest that there is some variability in how the model preforms across folds, but the differences are consistent. 
 
 # Different Value for the Random Seed
 ```{r}
@@ -394,7 +394,7 @@ collect_metrics(dose_cv2)
 collect_metrics(all_cv2)
 ```
 
-Changing the random seed resulted in slightly different RSME values, this could be due to variation in how the data was split into the folds. The pattern stayed the same with the model that used all the predictors having the lowest RSME value, and the null model having the highest RSME value. 
+Changing the random seed resulted in slightly different RMSE values, this could be due to variation in how the data was split into the folds. The pattern stayed the same with the model that used all the predictors having the lowest RMSE value, and the null model having the highest RMSE value. 
 
 # This section added by Riley Herber
 
@@ -526,3 +526,46 @@ ggplot(preds_ci, aes(x = observed)) +
 ```
 
 The plot of observed versus predicted values with 89% bootstrap confidence intervals shows that the full linear model predicts total drug exposure reasonably well. The black points represent the original model predictions, and most lie close to the 45° line, indicating general agreement between observed and predicted values. The blue points, representing the median predictions from 100 bootstrap samples, largely overlap with the original predictions, demonstrating that the model is stable across resampled datasets. The red vertical lines indicate the 89% confidence intervals, which are relatively narrow for most observations, reflecting low prediction uncertainty, but are wider for a few individuals, likely corresponding to less typical combinations of predictor values. Overall, the pattern suggests that the model captures the main trends in the data, and the bootstrap confirms both the stability and the uncertainty of the predictions.
+
+# Final Evaluation
+
+# Predictions for Training Data Using Model 2
+```{r}
+train_pred_all <- predict(lm_all_fit, new_data = train_data) %>%
+  bind_cols(train_data %>% select(Y)) %>%
+  mutate(dataset = "Training")
+```
+
+# Predictions for Test Data Using Model 2
+```{r}
+test_pred_all <- predict(lm_all_fit, new_data = test_data) %>%
+  bind_cols(test_data %>% select(Y)) %>%
+  mutate(dataset = "Test")
+```
+
+# Combine Training and Testing Data Predictions
+```{r}
+final_pred_df <- bind_rows(train_pred_all, test_pred_all)
+```
+
+# Plot for Observed vs Predicted for Both Datasets
+```{r}
+ggplot(final_pred_df, aes(x = Y, y = .pred, color = dataset, shape = dataset)) +
+  geom_point(alpha = 0.7, size = 2.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 5000), ylim = c(0, 5000)) +
+  labs(
+    x = "Observed Values",
+    y = "Predicted Values",
+    color = "Dataset",
+    shape = "Dataset",
+    title = "Observed vs Predicted Values for Training and Test Data"
+  ) +
+  theme_minimal()
+```
+
+This plot compares observed vs predicted values for both the training and test data using model 2. The test data points and the training data points are mixed in with each other, which suggests that the model generalizes well to new data and does not overfit.
+
+# Overall Model Assessment
+
+The null model gives us a baseline to compare against, because it does not use any predictors and just predicts the same average value every time. Model 1 uses dose as the only predictor, so the main question is whether dose alone improves prediction. Model 1 has a lower RMSE than the null model, so dose does help explain some of the variation in the outcome. Model 2 includes all predictors, and this model has an even lower RMSE value compared to model 1. The lower RMSE value shows that using all predictors is more accurate. The test data predictions are mixed in with the training data predictions, which means that the model is generalizing to new data rather than overfitting.
