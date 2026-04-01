@@ -63,6 +63,8 @@ clean_df <- final_df %>%
   ) %>%
   select(Y, DOSE, AGE, SEX, RACE, WT, HT)
 
+saveRDS(clean_df, file = "clean-data.rds")
+
 summary(clean_df)
 ```
 
