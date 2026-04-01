@@ -49,7 +49,8 @@ border: none; display: inline-block;
 padding: 0 4px; width: 4em;
 }
 pre.numberSource { margin-left: 3em; padding-left: 4px; }
-
+div.sourceCode
+{ }
 @media screen {
 pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
@@ -3916,6 +3917,10 @@ vertical-align: -.125em;
     <a class="dropdown-item" href="../fitting-exercise/fitting-exercise.html">
  <span class="dropdown-text">Fitting Exercise</span></a>
   </li>  
+        <li>
+    <a class="dropdown-item" href="../ml-models-exercise/ml-models-exercise.html">
+ <span class="dropdown-text">Machine Learning Exercise</span></a>
+  </li>  
     </ul>
   </li>
 </ul>
@@ -4494,6 +4499,10 @@ $ HT   &lt;dbl&gt; 1.769997, 1.759850, 1.809847, 1.649993, 1.560052, 1.829862, 1
 </div>
 </div>
 </div>
+<p>When using CV, the model is evaluated on data that was not used for training. This provides a more realistic estimate of model performance. As a result, RMSE values increase.</p>
+<p>When tuning without CV, the random forest appeared to perform best because it overfit the training data. When using CV, this overfitting is penalized, and the random forest’s preformance decreases. The LASSO model generalizes better to new data and therefore achieves a lower RMSE with CV.</p>
+<p>The LASSO still performs best at small penalty values. High prnalties shrink coeffcinets too much, which causes underfitting. A small penalty allows the model to keep most of predictors while still applying slight shrinkage.</p>
+<p>Based on the reuslts of tuning with CV, the LASSO model with a small penalty performs best, as it achieves the lowest RMSE and generalizes better to unseen data compared to random forest.</p>
 
 
 </section>
