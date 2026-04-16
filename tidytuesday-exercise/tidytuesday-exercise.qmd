@@ -1,0 +1,513 @@
+---
+title: "TIdyTuesday Exercise"
+---
+
+#Load data
+```{r}
+beaufort_scale <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2026/2026-04-14/beaufort_scale.csv')
+birds <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2026/2026-04-14/birds.csv')
+sea_states <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2026/2026-04-14/sea_states.csv')
+ships <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2026/2026-04-14/ships.csv')
+```
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(janitor)
+library(lubridate)
+library(knitr)
+library(scales)
+
+tidymodels_prefer()
+set.seed(1234)
+```
+
+```{r}
+list(
+  beaufort_scale = glimpse(beaufort_scale),
+  birds = glimpse(birds),
+  sea_states = glimpse(sea_states),
+  ships = glimpse(ships)
+)
+```
+
+```{r}
+tibble(
+  dataset = c("beaufort_scale", "birds", "sea_states", "ships"),
+  n_rows = c(nrow(beaufort_scale), nrow(birds), nrow(sea_states), nrow(ships)),
+  n_cols = c(ncol(beaufort_scale), ncol(birds), ncol(sea_states), ncol(ships))
+) %>%
+  kable()
+```
+
+# Cleaning and wrangling 
+```{r}
+beaufort_scale2 <- beaufort_scale %>%
+  mutate(
+    wind_speed_mid_knots = case_when(
+      is.na(wind_speed_knots_max) ~ wind_speed_knots_min,
+      TRUE ~ (wind_speed_knots_min + wind_speed_knots_max) / 2
+    )
+  )
+
+sea_states2 <- sea_states %>%
+  mutate(
+    wave_height_mid_m = (wave_meters_min + wave_meters_max) / 2
+  )
+
+# Bird observations
+
+birds_clean <- birds %>%
+  clean_names() %>%
+  mutate(
+    # 99999 means estimated >100,000; treat as missing for modeling
+    count = na_if(count, 99999),
+    n_feeding = na_if(n_feeding, 99999),
+    n_flying_past = na_if(n_flying_past, 99999),
+    species_present = !is.na(species_common_name)
+  )
+
+bird_record <- birds_clean %>%
+  group_by(record_id) %>%
+  summarise(
+    total_birds = sum(count, na.rm = TRUE),
+    n_species = n_distinct(species_scientific_name, na.rm = TRUE),
+    any_birds = any(species_present),
+    n_obs_rows = n(),
+    n_feeding_total = sum(n_feeding, na.rm = TRUE),
+    n_flying_past_total = sum(n_flying_past, na.rm = TRUE),
+    prop_obs_feeding = mean(feeding, na.rm = TRUE),
+    prop_obs_flying_past = mean(flying_past, na.rm = TRUE),
+    prop_obs_following_ship = mean(following_ship, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    total_birds = if_else(!any_birds, 0, total_birds),
+    n_species = if_else(!any_birds, 0L, n_species)
+  )
+
+# Clean ship data 
+ships_clean <- ships %>%
+  clean_names() %>%
+  mutate(
+    date = as.Date(date),
+    month = month(date, label = TRUE, abbr = TRUE),
+    year = year(date),
+    census_method = fct_drop(census_method),
+    season = fct_drop(season),
+    cloud_cover = fct_drop(cloud_cover),
+    precipitation = fct_drop(precipitation),
+    activity = fct_drop(activity),
+    observer = fct_drop(observer),
+    hemisphere = fct_drop(hemisphere)
+  ) %>%
+  left_join(beaufort_scale2, by = "wind_speed_class") %>%
+  left_join(sea_states2, by = "sea_state_class")
+
+analysis_df <- ships_clean %>%
+  left_join(bird_record, by = "record_id") %>%
+  mutate(
+    total_birds = replace_na(total_birds, 0),
+    n_species = replace_na(n_species, 0L),
+    any_birds = replace_na(any_birds, FALSE),
+    n_obs_rows = replace_na(n_obs_rows, 0L),
+    n_feeding_total = replace_na(n_feeding_total, 0),
+    n_flying_past_total = replace_na(n_flying_past_total, 0),
+    prop_obs_feeding = replace_na(prop_obs_feeding, 0),
+    prop_obs_flying_past = replace_na(prop_obs_flying_past, 0),
+    prop_obs_following_ship = replace_na(prop_obs_following_ship, 0),
+    log_total_birds = log1p(total_birds)
+  )
+
+#Selecting variables
+
+model_df <- analysis_df %>%
+  filter(census_method == "full") %>%
+  select(
+    record_id,
+    log_total_birds,
+    total_birds,
+    n_species,
+    speed,
+    direction,
+    latitude,
+    longitude,
+    activity,
+    cloud_cover,
+    precipitation,
+    wind_speed_class,
+    wind_speed_mid_knots,
+    wind_description,
+    wind_direction,
+    air_temperature,
+    pressure,
+    sea_state_class,
+    sea_state_description,
+    wave_height_mid_m,
+    sea_surface_temperature,
+    depth,
+    observer,
+    season,
+    month,
+    year
+  ) %>%
+  mutate(across(where(is.character), as.factor))
+  
+skim_summary <- tibble(
+  rows = nrow(model_df),
+  cols = ncol(model_df),
+  outcome_missing = sum(is.na(model_df$log_total_birds))
+)
+
+skim_summary %>% kable()
+```
+
+# Exploratory analysis 
+```{r}
+# Outcome distribution 
+ggplot(model_df, aes(x = total_birds)) +
+  geom_histogram(bins = 40) +
+  scale_x_continuous(labels = comma) +
+  labs(
+    title = "Distribution of total birds observed per full census",
+    x = "Total birds",
+    y = "Count of ship records"
+  )
+
+# Activities that have higher bird counts
+model_df %>%
+  group_by(activity) %>%
+  summarise(
+    n = n(),
+    mean_birds = mean(total_birds, na.rm = TRUE),
+    median_birds = median(total_birds, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(mean_birds)) %>%
+  kable(digits = 2)
+
+# Seasons that have higher bird counts
+ggplot(model_df, aes(x = season, y = log_total_birds)) +
+  geom_boxplot() +
+  labs(
+    title = "Bird abundance varies by season",
+    x = "Season",
+    y = "log(1 + total birds)"
+  )
+
+# Enviormental conditions (wind)
+
+ggplot(model_df, aes(x = wind_speed_mid_knots, y = log_total_birds)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(
+    title = "Bird abundance vs wind speed",
+    x = "Approximate wind speed (knots)",
+    y = "log(1 + total birds)"
+  )
+
+# Enviormental conditions (wave)
+
+ggplot(model_df, aes(x = wave_height_mid_m, y = log_total_birds)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(
+    title = "Bird abundance vs wave height",
+    x = "Approximate wave height (m)",
+    y = "log(1 + total birds)"
+  )
+
+# Missing variables 
+model_df %>%
+  summarise(across(everything(), ~mean(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "prop_missing") %>%
+  arrange(desc(prop_missing)) %>%
+  slice_head(n = 15) %>%
+  mutate(prop_missing = percent(prop_missing, accuracy = 0.1)) %>%
+  kable()
+```
+
+My scientific question is "How well enviornmental conditions (windm current, season) and ship activity predict seabird abundance during an observation period?"
+
+I hypothesize that wind, current, season, and ship activity will help explain some of the variation. 
+
+# Spliting test and train data
+```{r}
+set.seed(1234)
+data_split <- initial_split(model_df, prop = 0.80)
+
+train_data <- training(data_split)
+test_data  <- testing(data_split)
+
+nrow(train_data)
+nrow(test_data)
+```
+
+# Recipe and CV setup
+```{r}
+bird_recipe <- recipe(log_total_birds ~ ., data = train_data) %>%
+  update_role(record_id, total_birds, n_species, new_role = "id") %>%
+  step_rm(year) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_other(observer, threshold = 0.02) %>%
+  step_impute_median(all_numeric_predictors()) %>%
+  step_impute_mode(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_normalize(all_numeric_predictors())
+
+bird_recipe
+
+#cv setup
+
+set.seed(1234)
+cv_folds <- vfold_cv(train_data, v = 5)
+
+reg_metrics <- metric_set(rmse, rsq, mae)
+```
+
+# Models 
+```{r}
+lm_spec <- linear_reg() %>%
+  set_engine("lm")
+
+rf_spec <- rand_forest(
+  trees = 1000,
+  mtry = tune(),
+  min_n = tune()
+) %>%
+  set_engine("ranger") %>%
+  set_mode("regression")
+
+tree_spec <- decision_tree(
+  cost_complexity = tune(),
+  tree_depth = tune(),
+  min_n = tune()
+) %>%
+  set_engine("rpart") %>%
+  set_mode("regression")
+
+# workflows
+
+lm_wf <- workflow() %>%
+  add_recipe(bird_recipe) %>%
+  add_model(lm_spec)
+
+rf_wf <- workflow() %>%
+  add_recipe(bird_recipe) %>%
+  add_model(rf_spec)
+
+tree_wf <- workflow() %>%
+  add_recipe(bird_recipe) %>%
+  add_model(tree_spec)
+```
+
+# Model 1: linear regression 
+```{r}
+set.seed(1234)
+lm_res <- fit_resamples(
+  lm_wf,
+  resamples = cv_folds,
+  metrics = reg_metrics,
+  control = control_resamples(save_pred = TRUE)
+)
+
+collect_metrics(lm_res)
+```
+
+# Model 2: random forest 
+```{r}
+set.seed(1234)
+rf_grid <- grid_regular(
+  mtry(range = c(3L, 15L)),
+  min_n(range = c(2L, 20L)),
+  levels = 4
+)
+
+rf_res <- tune_grid(
+  rf_wf,
+  resamples = cv_folds,
+  grid = rf_grid,
+  metrics = reg_metrics,
+  control = control_grid(save_pred = TRUE)
+)
+
+collect_metrics(rf_res)
+```
+
+# Model 3: boosted trees
+```{r}
+set.seed(1234)
+tree_grid <- grid_regular(
+  cost_complexity(),
+  tree_depth(),
+  min_n(),
+  levels = 4
+)
+
+tree_res <- tune_grid(
+  tree_wf,
+  resamples = cv_folds,
+  grid = tree_grid,
+  metrics = reg_metrics,
+  control = control_grid(save_pred = TRUE)
+)
+
+collect_metrics(tree_res)
+```
+
+# Compare preformance of models 
+```{r}
+lm_metrics <- collect_metrics(lm_res) %>%
+  mutate(model = "Linear regression")
+
+rf_metrics <- show_best(rf_res, metric = "rmse", n = 5) %>%
+  slice(1) %>%
+  mutate(model = "Random forest")
+
+tree_metrics <- show_best(tree_res, metric = "rmse", n = 5) %>%
+  slice(1) %>%
+  mutate(model = "Decision tree")
+
+bind_rows(
+  lm_metrics %>% select(model, .metric, mean, std_err),
+  rf_metrics %>% select(model, .metric, mean, std_err),
+  tree_metrics %>% select(model, .metric, mean, std_err)
+) %>%
+  arrange(.metric, mean) %>%
+  kable(digits = 3)
+
+autoplot(rf_res) +
+  labs(title = "Random forest tuning results")
+
+autoplot(tree_res) +
+  labs(title = "Boosted tree tuning results")
+```
+
+# CV predictions 
+```{r}
+# linear regression model
+lm_cv_preds <- collect_predictions(lm_res) %>%
+  mutate(model = "Linear regression")
+
+ggplot(lm_cv_preds, aes(x = .pred, y = log_total_birds - .pred)) +
+  geom_point(alpha = 0.25) +
+  geom_hline(yintercept = 0, linetype = 2) +
+  labs(
+    title = "Linear regression CV residuals",
+    x = "Predicted log bird count",
+    y = "Residual"
+  )
+
+# random forest model
+
+best_rf <- select_best(rf_res, metric = "rmse")
+
+rf_final_wf <- finalize_workflow(rf_wf, best_rf)
+
+rf_cv_preds <- fit_resamples(
+  rf_final_wf,
+  resamples = cv_folds,
+  metrics = reg_metrics,
+  control = control_resamples(save_pred = TRUE)
+) %>%
+  collect_predictions()
+
+ggplot(rf_cv_preds, aes(x = .pred, y = log_total_birds - .pred)) +
+  geom_point(alpha = 0.25) +
+  geom_hline(yintercept = 0, linetype = 2) +
+  labs(
+    title = "Random forest CV residuals",
+    x = "Predicted log bird count",
+    y = "Residual"
+  )
+
+# boosted trees model
+
+best_tree <- select_best(tree_res, metric = "rmse")
+
+tree_final_wf <- finalize_workflow(tree_wf, best_tree)
+
+tree_cv_preds <- fit_resamples(
+  tree_final_wf,
+  resamples = cv_folds,
+  metrics = reg_metrics,
+  control = control_resamples(save_pred = TRUE)
+) %>%
+  collect_predictions()
+
+ggplot(tree_cv_preds, aes(x = .pred, y = log_total_birds - .pred)) +
+  geom_point(alpha = 0.25) +
+  geom_hline(yintercept = 0, linetype = 2) +
+  labs(
+    title = "Boosted tree CV residuals",
+    x = "Predicted log bird count",
+    y = "Residual"
+  )
+```
+
+I chose the random forest as the best overall model because it preformed better than the other models in both predictive accuracy and ability to show realtionships. The linear regression model showed weak performance (R² ≈ 0.12), indicating that it failed to explain much of the variation in seabird abundance. The decision tree also performed poorly, with higher error and low explanatory power. The random forest achieved the lowest RMSE and highest R², explaining approximately 39% of the variation in bird abundance on the test set .
+
+# Overall best model 
+```{r}
+
+best_rf <- select_best(rf_res, metric = "rmse")
+rf_final_wf <- finalize_workflow(rf_wf, best_rf)
+
+# Fit final model on training data only
+rf_final_fit <- fit(rf_final_wf, data = train_data)
+
+test_preds <- predict(rf_final_fit, new_data = test_data) %>%
+  bind_cols(test_data) %>%
+  mutate(residual = log_total_birds - .pred)
+
+metric_set(rmse, rsq, mae)(test_preds, truth = log_total_birds, estimate = .pred) %>%
+  kable(digits = 3)
+
+# Predicted vs observed
+ggplot(test_preds, aes(x = .pred, y = log_total_birds)) +
+  geom_point(alpha = 0.3) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  labs(
+    title = "Final model performance on test data",
+    x = "Predicted log bird count",
+    y = "Observed log bird count"
+  )
+
+# Residual plot
+ggplot(test_preds, aes(x = .pred, y = residual)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, linetype = 2) +
+  labs(
+    title = "Test-set residuals for final model",
+    x = "Predicted log bird count",
+    y = "Residual"
+  )
+```
+
+# Summary figure
+```{r}
+analysis_df %>%
+  filter(census_method == "full") %>%
+  group_by(wind_description) %>%
+  summarise(
+    mean_log_birds = mean(log_total_birds, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(wind_description = fct_reorder(wind_description, mean_log_birds)) %>%
+  ggplot(aes(x = wind_description, y = mean_log_birds)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Average bird abundance differs across wind conditions",
+    x = "Wind description",
+    y = "Mean log(1 + total birds)"
+  )
+```
+
+I looked at how well environmental conditions and ship activity predict seabird abundance during observation periods. Bird observations were aggregated to the ship-record level, and the outcome was modeled as log(1 + total birds) to address strong skewness.
+Exploratory analysis showed that bird abundance varied across ship activities, seasons, and environmental conditions. For example, activities such as trawling were associated with much higher average bird counts, and wind conditions appeared to influence bird abundance . However, many predictors contained missing data, which likely limited model performance.
+
+Model comparisons showed that the random forest outperformed both linear regression and decision tree models. This indicates that the relationships between predictors and seabird abundance are nonlinear and complex. On the test data, the final random forest model achieved an RMSE of ~1.17 and R² of ~0.39 , meaning it explains some of the variation. Residual patterns suggest that there are additional that influence seabird abundance that were not shown in this dataset.
